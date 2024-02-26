@@ -1,0 +1,79 @@
+esphome:    # Definerar lite variabler (namn) som visas i Home Assistant
+  name: tillamp
+  friendly_name: Tillamp
+
+esp32:      # definerar platformen man bygger på, i detta fallet en esp32dev/esp-wroom-32 med arduino-framework
+  board: esp32dev
+  framework:
+    type: arduino
+
+wifi:       # wifi secrets, finns i en annan fil men går att lägga direkt här om man vill
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+logger:
+
+ota:
+  password: "x"
+
+web_server: # sätter upp port för web-server att skicka funktionskallelser till från home assistant
+  port: 80
+
+api:
+  services:                         # Services att visa i API
+    - service: control_blind        # Namn på tjänsten
+      variables:                    # sätter upp variabler
+        target: int                 # integer för att sätta målposition
+      then:                         # vad som ska hända när man kallar funktionen
+        - stepper.set_target:       # funktion för att ange målposition, använder sig av stepper library, väljer stepper och kan sätter sedan target position till target som defineras när man kallar funktionen
+            id: my_stepper
+            target: !lambda 'return target;'
+        - sensor.template.publish:  # funktion för att publicera position, Sätter ID för "publish"/ namnet att visa i home assistant, Sätter sedan status att returnera, i detta fall returnerar den target variabeln
+            id: position
+            state: !lambda 'return target;'
+
+cover: # Sätter upp en "Cover" entity
+  - platform: template    # använder template platformen att bygga på, alltså med custom innehåll
+    name: "Curtain"
+    id: curtain_1
+    device_class: blind   # visar som en "blind" för home assistant
+    open_action:          # en action åtkomlig från home assistant
+      - stepper.set_target:
+          id: my_stepper  # väljer stepper
+          target: 6000    # sätter position
+      - sensor.template.publish:
+          id: position    # publicerar under statusen "position" i home assistant, och returnerar värdet
+          state: !lambda return id(my_stepper).target_position;
+    close_action:         # samma sak för open_action, fast gå mot 0 istället
+      - stepper.set_target:
+          id: my_stepper
+          target: 0
+      - sensor.template.publish:
+            id: position
+            state: !lambda return id(my_stepper).target_position;
+    stop_action:          # action för att stoppa rörelsen
+      - stepper.set_target:
+          id: my_stepper
+          target: !lambda return id(my_stepper).current_position; // Sätter target till nuvarande position
+      - sensor.template.publish:
+            id: position
+            state: !lambda return id(my_stepper).current_position;// Returnerar position att publicera till status
+    optimistic: true
+    assumed_state: true
+
+sensor:
+  - platform: template          # template sensorer att visa till Home Assistant
+    name: "My Curtain Position" # Namnet på sensorn
+    id: position                # ID till sensorn, visar position variabeln
+
+stepper:                        # sätter upp stepper biblioteket integrerat i esphome
+  - platform: uln2003           # stepper-drivarens namn/platform
+    id: my_stepper              # ID att välja motor vid användning av funktioner
+    pin_a: 33                   # definerar pins
+    pin_b: 15
+    pin_c: 32
+    pin_d: 14
+    max_speed: 1000 steps/s     # definerar hastighet
+    step_mode: HALF_STEP        # half step = microstepping, alltså går "mellan" två steg, alltså 0001 -> 0011 -> 0010 och så vidare, biblioteket stödjer FULL_STEP också
+    acceleration: 2000          # sätter upp acceleration och deceleration
+    deceleration: 2000
